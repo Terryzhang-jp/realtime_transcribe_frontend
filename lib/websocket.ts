@@ -5,6 +5,7 @@ interface TranscriptionOptions {
   onTranscription?: (text: string, refinedText?: string, translation?: string, timestamp?: number) => void;
   language?: string;
   model?: string;
+  targetLanguage?: string;
 }
 
 class AudioTranscriptionService {
@@ -18,7 +19,8 @@ class AudioTranscriptionService {
   };
   private config = {
     language: 'zh',
-    model: 'tiny'
+    model: 'tiny',
+    target_language: 'en'
   };
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -257,14 +259,8 @@ class AudioTranscriptionService {
         event: 'config',
         config: {
           language: this.config.language,
-          model: this.config.model,
-          noise_suppression: false,
-          enable_realtime_transcription: true,
-          use_main_model_for_realtime: true,
-          realtime_model_type: 'tiny',
-          realtime_processing_pause: 0.2,
-          stabilization_window: 2,
-          match_threshold: 10
+          model_type: this.config.model,
+          target_language: this.config.target_language || 'en'
         }
       };
 
@@ -366,10 +362,112 @@ class AudioTranscriptionService {
     }
   }
 
-  updateConfig(language: string, model: string): void {
+  updateConfig(language: string, model: string, target_language?: string): void {
+    console.log(`更新配置: language=${language}, model=${model}, target_language=${target_language || this.config.target_language}`);
+    
+    // 验证语言和模型是否有效
+    const validLanguages = ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'ru'];
+    const validModels = ['tiny', 'base', 'small', 'medium', 'large'];
+    
+    if (!validLanguages.includes(language)) {
+      console.error(`不支持的语言: ${language}`);
+      return;
+    }
+    
+    if (!validModels.includes(model)) {
+      console.error(`不支持的模型: ${model}`);
+      return;
+    }
+    
     this.config.language = language;
     this.config.model = model;
-    this.sendConfig();
+    if (target_language) {
+      this.config.target_language = target_language;
+    }
+    
+    // 发送配置更新
+    this.sendConfig().catch(error => {
+      console.error('发送配置更新失败:', error);
+    });
+  }
+
+  getClientId(): string {
+    if (!this.ws) return '未连接';
+    // 从WebSocket URL提取客户端ID
+    const url = this.ws.url;
+    const parts = url.split('/');
+    const clientId = parts[parts.length - 1];
+    return clientId || '未知';
+  }
+
+  async checkServerConfig(): Promise<any> {
+    const clientId = this.getClientId();
+    if (clientId === '未连接' || clientId === '未知') {
+      throw new Error('未连接到服务器，无法获取配置');
+    }
+    
+    try {
+      const protocol = window.location.protocol;
+      const hostname = window.location.hostname;
+      const port = '8000'; // 使用后端端口
+      
+      const url = `${protocol}//${hostname}:${port}/ws/client/${clientId}/config`;
+      console.log(`正在检查服务器配置: ${url}`);
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`服务器返回错误: ${response.status} ${response.statusText}`);
+      }
+      
+      const config = await response.json();
+      console.log('服务器配置:', config);
+      return config;
+    } catch (error) {
+      console.error('检查服务器配置时出错:', error);
+      throw error;
+    }
+  }
+  
+  async setServerConfig(newConfig: any): Promise<any> {
+    const clientId = this.getClientId();
+    if (clientId === '未连接' || clientId === '未知') {
+      throw new Error('未连接到服务器，无法设置配置');
+    }
+    
+    try {
+      const protocol = window.location.protocol;
+      const hostname = window.location.hostname;
+      const port = '8000'; // 使用后端端口
+      
+      // 确保使用正确的字段名
+      const configToSend = { ...newConfig };
+      if (newConfig.modelType && !newConfig.model_type) {
+        configToSend.model_type = newConfig.modelType;
+        delete configToSend.modelType;
+      }
+      
+      const url = `${protocol}//${hostname}:${port}/ws/client/${clientId}/config`;
+      console.log(`正在设置服务器配置: ${url}`, configToSend);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(configToSend)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`服务器返回错误: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('服务器配置设置结果:', result);
+      return result;
+    } catch (error) {
+      console.error('设置服务器配置时出错:', error);
+      throw error;
+    }
   }
 
   disconnect(): void {

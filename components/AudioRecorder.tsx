@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import audioTranscriptionService from '../lib/websocket';
+import CheckConfig from './CheckConfig';
 // 使用常量代替从npm包导入
 const NOISE_SUPPRESSOR_WORKLET_NAME = 'NoiseSuppressorWorklet';
 
@@ -7,12 +8,14 @@ interface AudioRecorderProps {
   onTranscriptionResult: (text: string, refinedText?: string, translation?: string, timestamp?: number) => void;
   language: string;
   modelType: string;
+  targetLanguage?: string;
 }
 
 const AudioRecorder: React.FC<AudioRecorderProps> = ({
   onTranscriptionResult,
   language = 'zh',
   modelType = 'tiny',
+  targetLanguage = 'en',
 }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -41,7 +44,8 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
   const callbacksRef = useRef({
     onTranscriptionResult,
     language,
-    modelType
+    modelType,
+    targetLanguage
   });
   
   // 静音检测计数器
@@ -53,9 +57,10 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
     callbacksRef.current = {
       onTranscriptionResult,
       language,
-      modelType
+      modelType,
+      targetLanguage
     };
-  }, [onTranscriptionResult, language, modelType]);
+  }, [onTranscriptionResult, language, modelType, targetLanguage]);
   
   // 处理转写结果的回调函数
   const handleTranscriptionResult = useCallback((
@@ -111,7 +116,8 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
             setConnectionStatus('disconnected');
           },
           language,
-          model: modelType
+          model: modelType,
+          targetLanguage
         });
       } catch (error) {
         console.error('连接WebSocket时出错:', error);
@@ -125,15 +131,15 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
     return () => {
       audioTranscriptionService.disconnect();
     };
-  }, [language, modelType]);
+  }, [language, modelType, targetLanguage]);
   
   // 使用单独的effect来更新配置
   useEffect(() => {
     if (isConnected) {
-      console.log('更新WebSocket配置:', { language, modelType });
-      audioTranscriptionService.updateConfig(language, modelType);
+      console.log('更新WebSocket配置:', { language, modelType, targetLanguage });
+      audioTranscriptionService.updateConfig(language, modelType, targetLanguage);
     }
-  }, [language, modelType, isConnected]);
+  }, [language, modelType, targetLanguage, isConnected]);
   
   // 列出可用的音频设备
   useEffect(() => {
@@ -654,6 +660,61 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         </div>
       </div>
       
+      {/* 当前配置信息 */}
+      <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">当前配置</h3>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="flex items-center">
+            <span className="text-gray-500 dark:text-gray-400 mr-2">语言:</span>
+            <span className="font-medium">{
+              {
+                'zh': '中文',
+                'en': '英文',
+                'ja': '日文',
+                'ko': '韩文',
+                'fr': '法语',
+                'de': '德语',
+                'ru': '俄语'
+              }[language] || language
+            }</span>
+          </div>
+          <div className="flex items-center">
+            <span className="text-gray-500 dark:text-gray-400 mr-2">模型:</span>
+            <span className="font-medium">{
+              {
+                'tiny': '超小型',
+                'base': '基础型',
+                'small': '小型',
+                'medium': '中型',
+                'large': '大型'
+              }[modelType] || modelType
+            }</span>
+          </div>
+          <div className="flex items-center">
+            <span className="text-gray-500 dark:text-gray-400 mr-2">翻译语言:</span>
+            <span className="font-medium">{
+              {
+                'zh': '中文',
+                'en': '英文',
+                'ja': '日文',
+                'ko': '韩文',
+                'fr': '法语',
+                'de': '德语',
+                'ru': '俄语'
+              }[targetLanguage] || targetLanguage
+            }</span>
+          </div>
+          <div className="flex items-center">
+            <span className="text-gray-500 dark:text-gray-400 mr-2">连接ID:</span>
+            <span className="font-medium text-xs">{isConnected ? audioTranscriptionService.getClientId() : '未连接'}</span>
+          </div>
+          <div className="flex items-center">
+            <span className="text-gray-500 dark:text-gray-400 mr-2">上次更新:</span>
+            <span className="font-medium text-xs">{new Date().toLocaleTimeString()}</span>
+          </div>
+        </div>
+      </div>
+      
       {/* 音频源选择 */}
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
@@ -786,6 +847,11 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
       >
         {isRecording ? '停止录音' : '开始录音'}
       </button>
+      
+      {/* 添加配置检查组件 */}
+      <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4">
+        <CheckConfig language={language} modelType={modelType} targetLanguage={targetLanguage} />
+      </div>
     </div>
   );
 };

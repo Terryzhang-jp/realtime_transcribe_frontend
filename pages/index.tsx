@@ -18,6 +18,8 @@ const Home: React.FC = () => {
   const [language, setLanguage] = useState<string>('zh');
   const [modelType, setModelType] = useState<string>('tiny');
   const [targetLanguage, setTargetLanguage] = useState<string>('en');
+  const [showDebug, setShowDebug] = useState<boolean>(false);
+  const [statusUrl, setStatusUrl] = useState<string>('');
   
   // 处理新的转写结果
   const handleTranscriptionResult = (
@@ -63,6 +65,17 @@ const Home: React.FC = () => {
     { value: 'large', label: '大型 (最精确, 较慢)' },
   ];
   
+  // 从AudioRecorder组件获取客户端ID
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const protocol = window.location.protocol;
+      const hostname = window.location.hostname;
+      const port = '8000'; // 后端端口
+      
+      setStatusUrl(`${protocol}//${hostname}:${port}/ws/status`);
+    }
+  }, []);
+  
   return (
     <div className="min-h-screen flex flex-col">
       <Head>
@@ -78,16 +91,26 @@ const Home: React.FC = () => {
           实时语音转写系统
         </h1>
         
-        {/* 状态监控链接 */}
-        <div className="mb-4 text-center">
+        {/* 状态监控链接和调试开关 */}
+        <div className="mb-4 text-center flex items-center justify-center space-x-4">
           <a 
-            href="http://localhost:8000/test/ws-status" 
+            href={statusUrl} 
             target="_blank" 
             rel="noopener noreferrer"
             className="inline-block px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
           >
             查看WebSocket状态
           </a>
+          <div className="flex items-center">
+            <input 
+              type="checkbox" 
+              id="show-debug" 
+              checked={showDebug}
+              onChange={(e) => setShowDebug(e.target.checked)}
+              className="mr-2"
+            />
+            <label htmlFor="show-debug" className="text-sm">显示调试信息</label>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
@@ -105,7 +128,10 @@ const Home: React.FC = () => {
                   id="language-select"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white"
                   value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
+                  onChange={(e) => {
+                    console.log('语言切换:', e.target.value);
+                    setLanguage(e.target.value);
+                  }}
                 >
                   {languageOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -124,7 +150,10 @@ const Home: React.FC = () => {
                   id="target-language-select"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white"
                   value={targetLanguage}
-                  onChange={(e) => setTargetLanguage(e.target.value)}
+                  onChange={(e) => {
+                    console.log('目标语言切换:', e.target.value);
+                    setTargetLanguage(e.target.value);
+                  }}
                 >
                   {targetLanguageOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -173,8 +202,26 @@ const Home: React.FC = () => {
             onTranscriptionResult={handleTranscriptionResult}
             language={language}
             modelType={modelType}
+            targetLanguage={targetLanguage}
           />
         </div>
+        
+        {/* 调试信息面板 */}
+        {showDebug && (
+          <div className="mb-8 bg-gray-100 dark:bg-gray-700 rounded-lg p-4 text-sm">
+            <h3 className="font-medium mb-2">当前配置</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div><span className="font-medium">当前语言:</span> {language} ({languageOptions.find(o => o.value === language)?.label})</div>
+              <div><span className="font-medium">当前模型:</span> {modelType} ({modelOptions.find(o => o.value === modelType)?.label})</div>
+              <div><span className="font-medium">翻译目标:</span> {targetLanguage} ({targetLanguageOptions.find(o => o.value === targetLanguage)?.label})</div>
+              <div><span className="font-medium">时间戳:</span> {new Date().toLocaleTimeString()}</div>
+            </div>
+            <div className="mt-2">
+              <p className="text-sm text-gray-500">问题排查提示：如果更改语言后服务器返回配置更新失败，尝试刷新页面或重新连接。</p>
+              <p className="text-sm text-gray-500">配置更新失败时，可能是由于后端AudioProcessor创建新实例出错。</p>
+            </div>
+          </div>
+        )}
         
         {/* 转写结果显示 */}
         <TranscriptionDisplay 
