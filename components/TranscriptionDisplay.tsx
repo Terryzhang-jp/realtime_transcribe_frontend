@@ -17,6 +17,7 @@ interface TranscriptionDisplayProps {
   refinedTranscriptions?: string[];
   translations?: string[];
   timestamps?: number[];
+  contextEnhanced?: boolean[];
   isRecording: boolean;
 }
 
@@ -25,6 +26,7 @@ interface TranscriptionItem {
   refinedText?: string;
   translation?: string;
   timestamp: Date;
+  contextEnhanced?: boolean;
 }
 
 const TOKEN_THRESHOLD = 200; // 触发总结的token阈值
@@ -34,6 +36,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
   refinedTranscriptions = [],
   translations = [],
   timestamps = [],
+  contextEnhanced = [],
   isRecording
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -53,6 +56,8 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
   const [lastProcessedTokens, setLastProcessedTokens] = useState<number>(0);
   const [tokensUntilNextSummary, setTokensUntilNextSummary] = useState<number>(TOKEN_THRESHOLD);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryCount, setSummaryCount] = useState<number>(0); // 添加总结次数状态
+  const [summarySubmittedToBackend, setSummarySubmittedToBackend] = useState<boolean>(false); // 跟踪是否已提交给后端
   
   // 当录音状态改变时更新开始时间
   useEffect(() => {
@@ -95,13 +100,14 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
   // 将传入的转写结果转换为带时间戳的项目
   useEffect(() => {
     const newItems = transcriptions.map((text, index) => {
-      // 如果items中已有此索引的项，则保留其时间戳
+      // 如果items中已有此索引的项，则保留其时间戳和contextEnhanced标记
       if (index < items.length) {
         return {
           ...items[index],
           text,
           refinedText: refinedTranscriptions[index] || undefined,
-          translation: translations[index] || undefined
+          translation: translations[index] || undefined,
+          contextEnhanced: contextEnhanced[index] || false
         };
       }
       
@@ -110,7 +116,8 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
         text,
         refinedText: refinedTranscriptions[index] || undefined,
         translation: translations[index] || undefined,
-        timestamp: timestamps[index] ? new Date(timestamps[index] * 1000) : new Date()
+        timestamp: timestamps[index] ? new Date(timestamps[index] * 1000) : new Date(),
+        contextEnhanced: contextEnhanced[index] || false
       };
     });
     setItems(newItems);
@@ -119,7 +126,7 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
     if (newItems.length > items.length) {
       console.log(`%c接收到新转写结果 (总数: ${newItems.length})`, 'background: #9C27B0; color: white; padding: 2px 6px; border-radius: 4px;');
     }
-  }, [transcriptions, refinedTranscriptions, translations, timestamps]);
+  }, [transcriptions, refinedTranscriptions, translations, timestamps, contextEnhanced]);
   
   // 当新的转写结果出现时，滚动到底部
   useEffect(() => {
@@ -174,22 +181,69 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
       const result = await getSessionSummary(summaryData);
       
       // 更新总结结果
-      setSessionSummary({
+      const newSummary = {
         scene: result.scene,
         topic: result.topic,
         keyPoints: result.keyPoints,
         summary: result.summary,
         updatedAt: new Date()
-      });
+      };
+      
+      setSessionSummary(newSummary);
       
       // 更新已处理的token数
       setLastProcessedTokens(statistics.totalTokens);
+      
+      // 更新总结次数并处理第一次总结
+      if (summaryCount === 0) {
+        setSummaryCount(1);
+        // 第一次总结时，将总结发送给后端以增强优化和翻译
+        sendSummaryToBackend(newSummary);
+      }
       
     } catch (error) {
       console.error('获取会话总结时出错:', error);
       setSummaryError(error instanceof Error ? error.message : '获取总结失败');
     } finally {
       setIsFetchingSummary(false);
+    }
+  };
+  
+  // 将第一次总结发送给后端
+  const sendSummaryToBackend = async (summary: SessionSummary) => {
+    if (summarySubmittedToBackend) return; // 避免重复发送
+    
+    try {
+      const protocol = window.location.protocol;
+      const hostname = window.location.hostname;
+      const port = '8000'; // 后端端口
+      
+      const backendUrl = `${protocol}//${hostname}:${port}/api/summary/context`;
+      
+      console.log('向后端发送会话总结上下文...');
+      
+      const response = await fetch(backendUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          scene: summary.scene,
+          topic: summary.topic,
+          keyPoints: summary.keyPoints,
+          summary: summary.summary
+        }),
+      });
+      
+      if (response.ok) {
+        console.log('会话总结上下文已成功发送到后端，用于增强文本优化和翻译');
+        setSummarySubmittedToBackend(true);
+      } else {
+        console.error('发送会话总结上下文到后端失败:', await response.text());
+      }
+      
+    } catch (error) {
+      console.error('发送会话总结上下文时出错:', error);
     }
   };
   
@@ -282,9 +336,16 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
         <div className="mb-4 bg-primary-50 dark:bg-gray-700 rounded-lg p-4 border-l-4 border-primary-500">
           <div className="flex justify-between items-center mb-2">
             <h3 className="text-md font-medium text-gray-800 dark:text-white">会话总结</h3>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              更新于 {sessionSummary.updatedAt.toLocaleTimeString()}
-            </span>
+            <div className="flex items-center space-x-2">
+              {summarySubmittedToBackend && (
+                <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">
+                  已用于增强优化和翻译
+                </span>
+              )}
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                更新于 {sessionSummary.updatedAt.toLocaleTimeString()}
+              </span>
+            </div>
           </div>
           
           <div className="space-y-3">
@@ -377,7 +438,14 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
                 transition={{ duration: 0.3 }}
                 className="p-3 bg-primary-50 dark:bg-gray-800 rounded-lg border-l-4 border-primary-500"
               >
-                <p className="text-gray-800 dark:text-gray-200">{getDisplayText(item)}</p>
+                <div className="flex justify-between items-start">
+                  <p className="text-gray-800 dark:text-gray-200">{getDisplayText(item)}</p>
+                  {item.contextEnhanced && (showMode === 'refined' || showMode === 'translation') && (
+                    <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full whitespace-nowrap ml-2">
+                      会话增强
+                    </span>
+                  )}
+                </div>
                 
                 {/* 显示所有内容的详细视图 */}
                 {showMode !== 'original' && item.text && (

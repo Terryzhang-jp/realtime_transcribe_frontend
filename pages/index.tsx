@@ -21,18 +21,23 @@ const Home: React.FC = () => {
   const [targetLanguage, setTargetLanguage] = useState<string>('en');
   const [showDebug, setShowDebug] = useState<boolean>(false);
   const [statusUrl, setStatusUrl] = useState<string>('');
+  const [contextEnhanced, setContextEnhanced] = useState<boolean[]>([]);
   
   // 处理新的转写结果
   const handleTranscriptionResult = (
     text: string, 
     refinedText?: string, 
     translation?: string, 
-    timestamp?: number
+    timestamp?: number,
+    contextEnhanced?: boolean
   ) => {
     setTranscriptions((prev) => [...prev, text]);
     setRefinedTranscriptions((prev) => [...prev, refinedText || '']);
     setTranslations((prev) => [...prev, translation || '']);
     setTimestamps((prev) => [...prev, timestamp || Date.now() / 1000]);
+    
+    // 更新contextEnhanced状态
+    setContextEnhanced((prev) => [...prev, contextEnhanced || false]);
   };
 
   // 语言选项
@@ -231,6 +236,7 @@ const Home: React.FC = () => {
           refinedTranscriptions={refinedTranscriptions}
           translations={translations}
           timestamps={timestamps}
+          contextEnhanced={contextEnhanced}
           isRecording={isRecording}
         />
       </main>

@@ -5,7 +5,7 @@ import CheckConfig from './CheckConfig';
 const NOISE_SUPPRESSOR_WORKLET_NAME = 'NoiseSuppressorWorklet';
 
 interface AudioRecorderProps {
-  onTranscriptionResult: (text: string, refinedText?: string, translation?: string, timestamp?: number) => void;
+  onTranscriptionResult: (text: string, refinedText?: string, translation?: string, timestamp?: number, contextEnhanced?: boolean) => void;
   onRecordingStateChange?: (isRecording: boolean) => void;
   language: string;
   modelType: string;
@@ -69,7 +69,8 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
     text: string,
     refinedText?: string,
     translation?: string,
-    timestamp?: number
+    timestamp?: number,
+    contextEnhanced?: boolean
   ) => {
     if (isMountedRef.current) {
       console.log(`%c====== 转写结果 ======`, 'background: #ff9800; color: white; padding: 4px 8px; border-radius: 4px;');
@@ -85,7 +86,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         }
         
         console.log('调用父组件的onTranscriptionResult回调函数');
-        callbacksRef.current.onTranscriptionResult(text, refinedText, translation, timestamp);
+        callbacksRef.current.onTranscriptionResult(text, refinedText, translation, timestamp, contextEnhanced);
         console.log('%c转写结果已成功传递给父组件', 'color: #4CAF50; font-weight: bold;');
       } catch (error) {
         console.error('调用父组件回调函数出错:', error);
