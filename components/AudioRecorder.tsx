@@ -6,6 +6,7 @@ const NOISE_SUPPRESSOR_WORKLET_NAME = 'NoiseSuppressorWorklet';
 
 interface AudioRecorderProps {
   onTranscriptionResult: (text: string, refinedText?: string, translation?: string, timestamp?: number) => void;
+  onRecordingStateChange?: (isRecording: boolean) => void;
   language: string;
   modelType: string;
   targetLanguage?: string;
@@ -13,6 +14,7 @@ interface AudioRecorderProps {
 
 const AudioRecorder: React.FC<AudioRecorderProps> = ({
   onTranscriptionResult,
+  onRecordingStateChange,
   language = 'zh',
   modelType = 'tiny',
   targetLanguage = 'en',
@@ -327,6 +329,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
       
       // 先设置录音状态为true，确保handleAudioProcess能够处理数据
       setIsRecording(true);
+      onRecordingStateChange?.(true);  // 通知父组件录音开始
       
       // 创建音频源
       const source = audioContext.createMediaStreamSource(finalStream);
@@ -392,11 +395,12 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
       console.error('开始录音时出错:', error);
       alert(`无法访问音频: ${error}`);
       setIsRecording(false);
+      onRecordingStateChange?.(false);  // 通知父组件录音失败
     }
   };
   
   // 停止录音
-  const stopRecording = () => {
+  const stopRecording = async () => {
     console.log('停止录音...');
     // 停止音量可视化
     if (animationFrameRef.current) {
@@ -429,6 +433,7 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
     console.log('录音已停止，资源已清理');
     setIsRecording(false);
     setAudioLevel(0);
+    onRecordingStateChange?.(false);  // 通知父组件录音停止
   };
   
   // 处理音频数据

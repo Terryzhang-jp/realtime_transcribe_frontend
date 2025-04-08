@@ -1,11 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { calculateTextStatistics, TextStatistics } from '../lib/textUtils';
+import { getSessionSummary, SessionSummary as SessionSummaryType } from '../lib/summaryService';
+
+// 会话总结接口
+interface SessionSummary {
+  scene: string;       // 场景描述
+  topic: string;       // 主题
+  keyPoints: string[]; // 关键点列表
+  summary: string;     // 总体总结
+  updatedAt: Date;     // 更新时间
+}
 
 interface TranscriptionDisplayProps {
   transcriptions: string[];
   refinedTranscriptions?: string[];
   translations?: string[];
   timestamps?: number[];
+  isRecording: boolean;
 }
 
 interface TranscriptionItem {
@@ -15,15 +27,70 @@ interface TranscriptionItem {
   timestamp: Date;
 }
 
+const TOKEN_THRESHOLD = 200; // 触发总结的token阈值
+
 const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({ 
   transcriptions,
   refinedTranscriptions = [],
   translations = [],
-  timestamps = []
+  timestamps = [],
+  isRecording
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<TranscriptionItem[]>([]);
   const [showMode, setShowMode] = useState<'original' | 'refined' | 'translation'>('original');
+  const [statistics, setStatistics] = useState<TextStatistics>({
+    textCount: 0,
+    totalCharacters: 0,
+    totalTokens: 0
+  });
+  const [recordingStartTime, setRecordingStartTime] = useState<Date | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState<string>("00:00:00");
+  
+  // 会话总结相关状态
+  const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+  const [isFetchingSummary, setIsFetchingSummary] = useState<boolean>(false);
+  const [lastProcessedTokens, setLastProcessedTokens] = useState<number>(0);
+  const [tokensUntilNextSummary, setTokensUntilNextSummary] = useState<number>(TOKEN_THRESHOLD);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  
+  // 当录音状态改变时更新开始时间
+  useEffect(() => {
+    if (isRecording && !recordingStartTime) {
+      setRecordingStartTime(new Date());
+    } else if (!isRecording) {
+      setRecordingStartTime(null);
+      setRecordingDuration("00:00:00");
+    }
+  }, [isRecording]);
+  
+  // 格式化持续时间
+  const formatDuration = (durationInSeconds: number): string => {
+    const hours = Math.floor(durationInSeconds / 3600);
+    const minutes = Math.floor((durationInSeconds % 3600) / 60);
+    const seconds = Math.floor(durationInSeconds % 60);
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+  
+  // 更新录音时长
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    
+    if (recordingStartTime && isRecording) {
+      timer = setInterval(() => {
+        const now = new Date();
+        const durationInSeconds = (now.getTime() - recordingStartTime.getTime()) / 1000;
+        setRecordingDuration(formatDuration(durationInSeconds));
+      }, 1000);
+    }
+    
+    return () => {
+      if (timer) {
+        clearInterval(timer);
+      }
+    };
+  }, [recordingStartTime, isRecording]);
   
   // 将传入的转写结果转换为带时间戳的项目
   useEffect(() => {
@@ -74,16 +141,187 @@ const TranscriptionDisplay: React.FC<TranscriptionDisplayProps> = ({
     }
   };
   
+  // 更新统计信息并检查是否需要触发总结
+  useEffect(() => {
+    const currentTexts = items.map(item => getDisplayText(item));
+    const stats = calculateTextStatistics(currentTexts);
+    setStatistics(stats);
+    
+    // 计算距离下一次总结所需的token数
+    const tokensGained = stats.totalTokens - lastProcessedTokens;
+    const tokensRemaining = Math.max(0, TOKEN_THRESHOLD - tokensGained);
+    setTokensUntilNextSummary(tokensRemaining);
+    
+    // 检查是否达到token阈值触发总结
+    if (tokensGained >= TOKEN_THRESHOLD && items.length > 0 && !isFetchingSummary) {
+      fetchSessionSummary();
+    }
+  }, [items, showMode, lastProcessedTokens, isFetchingSummary]);
+  
+  // 获取会话总结
+  const fetchSessionSummary = async () => {
+    try {
+      setIsFetchingSummary(true);
+      setSummaryError(null);
+      
+      // 提取优化后的文本和时间戳
+      const summaryData = items.map(item => ({
+        text: item.refinedText || item.text,
+        timestamp: item.timestamp.toISOString()
+      }));
+      
+      // 调用API服务获取会话总结
+      const result = await getSessionSummary(summaryData);
+      
+      // 更新总结结果
+      setSessionSummary({
+        scene: result.scene,
+        topic: result.topic,
+        keyPoints: result.keyPoints,
+        summary: result.summary,
+        updatedAt: new Date()
+      });
+      
+      // 更新已处理的token数
+      setLastProcessedTokens(statistics.totalTokens);
+      
+    } catch (error) {
+      console.error('获取会话总结时出错:', error);
+      setSummaryError(error instanceof Error ? error.message : '获取总结失败');
+    } finally {
+      setIsFetchingSummary(false);
+    }
+  };
+  
+  // 计算进度条百分比
+  const calculateProgressPercentage = (): number => {
+    if (statistics.totalTokens < lastProcessedTokens) {
+      return 0;
+    }
+    
+    const tokensGained = statistics.totalTokens - lastProcessedTokens;
+    const percentage = Math.min(100, Math.floor((tokensGained / TOKEN_THRESHOLD) * 100));
+    return percentage;
+  };
+  
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
       <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white flex justify-between items-center">
         <span>转写结果</span>
-        {items.length > 0 && (
-          <span className="text-sm font-normal bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-1 rounded-full">
-            共 {items.length} 条
+        <div className="flex items-center space-x-4">
+          <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+            录音时长: {recordingDuration}
           </span>
-        )}
+          {items.length > 0 && (
+            <span className="text-sm font-normal bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-1 rounded-full">
+              共 {items.length} 条
+            </span>
+          )}
+        </div>
       </h2>
+      
+      {/* 统计信息面板 */}
+      <div className="mb-4 bg-gray-50 dark:bg-gray-700 rounded-lg p-4 grid grid-cols-4 gap-4">
+        <div className="text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400">录音时长</div>
+          <div className="text-xl font-bold text-primary-600 dark:text-primary-400">
+            {recordingDuration}
+          </div>
+          <div className="text-xs text-gray-400 dark:text-gray-500">
+            {isRecording ? "录音中..." : "未录音"}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400">文本数量</div>
+          <div className="text-xl font-bold text-primary-600 dark:text-primary-400">
+            {statistics.textCount}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400">总字符数</div>
+          <div className="text-xl font-bold text-primary-600 dark:text-primary-400">
+            {statistics.totalCharacters}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-sm text-gray-500 dark:text-gray-400">总Token数</div>
+          <div className="text-xl font-bold text-primary-600 dark:text-primary-400">
+            {statistics.totalTokens}
+          </div>
+        </div>
+      </div>
+      
+      {/* 会话总结进度条 */}
+      <div className="mb-4 bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">会话总结进度</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            还需 {tokensUntilNextSummary} tokens ({calculateProgressPercentage()}%)
+          </span>
+        </div>
+        <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+          <div 
+            className={`h-full transition-all duration-300 ease-in-out ${isFetchingSummary ? 'bg-yellow-500 animate-pulse' : 'bg-primary-500'}`}
+            style={{ width: `${calculateProgressPercentage()}%` }}
+          />
+        </div>
+        {isFetchingSummary && (
+          <div className="text-xs text-center mt-1 text-yellow-600 dark:text-yellow-400">
+            正在生成会话总结...
+          </div>
+        )}
+        {summaryError && (
+          <div className="text-xs text-center mt-1 text-red-600 dark:text-red-400">
+            {summaryError}
+          </div>
+        )}
+      </div>
+      
+      {/* 会话总结显示 */}
+      {sessionSummary && (
+        <div className="mb-4 bg-primary-50 dark:bg-gray-700 rounded-lg p-4 border-l-4 border-primary-500">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-md font-medium text-gray-800 dark:text-white">会话总结</h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              更新于 {sessionSummary.updatedAt.toLocaleTimeString()}
+            </span>
+          </div>
+          
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">场景</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{sessionSummary.scene}</p>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">主题</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{sessionSummary.topic}</p>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">关键点</h4>
+              <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400">
+                {sessionSummary.keyPoints.map((point, index) => (
+                  <li key={index}>{point}</li>
+                ))}
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">总结</h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{sessionSummary.summary}</p>
+            </div>
+          </div>
+          
+          <button 
+            className="mt-3 text-xs text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+            onClick={fetchSessionSummary}
+            disabled={isFetchingSummary}
+          >
+            {isFetchingSummary ? '更新中...' : '手动更新总结'}
+          </button>
+        </div>
+      )}
       
       {/* 显示模式选择 */}
       <div className="mb-4 flex space-x-2">

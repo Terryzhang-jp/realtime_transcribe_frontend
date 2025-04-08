@@ -15,6 +15,7 @@ const Home: React.FC = () => {
   const [refinedTranscriptions, setRefinedTranscriptions] = useState<string[]>([]);
   const [translations, setTranslations] = useState<string[]>([]);
   const [timestamps, setTimestamps] = useState<number[]>([]);
+  const [isRecording, setIsRecording] = useState<boolean>(false);
   const [language, setLanguage] = useState<string>('zh');
   const [modelType, setModelType] = useState<string>('tiny');
   const [targetLanguage, setTargetLanguage] = useState<string>('en');
@@ -203,6 +204,7 @@ const Home: React.FC = () => {
             language={language}
             modelType={modelType}
             targetLanguage={targetLanguage}
+            onRecordingStateChange={(recording: boolean) => setIsRecording(recording)}
           />
         </div>
         
@@ -229,6 +231,7 @@ const Home: React.FC = () => {
           refinedTranscriptions={refinedTranscriptions}
           translations={translations}
           timestamps={timestamps}
+          isRecording={isRecording}
         />
       </main>
 
