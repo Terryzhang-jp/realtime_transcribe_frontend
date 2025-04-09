@@ -42,4 +42,104 @@ body {
   .btn-danger {
     @apply bg-red-500 text-white hover:bg-red-600;
   }
+}
+
+/* 添加关键词匹配和连续文本的样式 */
+.keyword-match {
+  color: #d32f2f;
+  font-weight: bold;
+  border-left: 3px solid #d32f2f;
+  padding-left: 8px;
+  background-color: rgba(211, 47, 47, 0.05);
+}
+
+.continuation-info {
+  font-size: 0.8rem;
+  color: #2196f3;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.continuation-icon {
+  margin-right: 4px;
+}
+
+.continuation-text {
+  font-style: italic;
+}
+
+/* 添加上下文增强的样式 */
+.context-enhanced {
+  border-left: 3px solid #4caf50;
+  padding-left: 8px;
+}
+
+/* 转写项目样式 */
+.transcription-item {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* 时间戳样式 */
+.timestamp {
+  font-size: 0.8rem;
+  color: #757575;
+  margin-bottom: 4px;
+}
+
+/* 关键词匹配指示器样式 */
+.keyword-match-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.match-status {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.match-status.matched {
+  background-color: rgba(211, 47, 47, 0.1);
+  color: #d32f2f;
+  border-left: 3px solid #d32f2f;
+}
+
+.match-status.not-matched {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #757575;
+  border-left: 3px solid #757575;
+}
+
+.match-icon {
+  margin-right: 0.5rem;
+  font-size: 1rem;
+}
+
+.match-reason {
+  font-size: 0.75rem;
+  color: #555;
+  padding: 0.25rem 0.5rem;
+  margin-left: 1.5rem;
+}
+
+.reason-label {
+  font-weight: 600;
+}
+
+.matched-text {
+  padding: 0.5rem;
+  background-color: rgba(211, 47, 47, 0.05);
+  border-left: 3px solid #d32f2f;
+  border-radius: 0.25rem;
+}
+
+.keyword-match-status {
+  border: 1px solid rgba(0, 0, 0, 0.1);
 } 

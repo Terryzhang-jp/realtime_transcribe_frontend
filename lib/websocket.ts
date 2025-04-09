@@ -2,7 +2,17 @@ interface TranscriptionOptions {
   onOpen?: (event: Event) => void;
   onClose?: (event: CloseEvent) => void;
   onError?: (error: Error) => void;
-  onTranscription?: (text: string, refinedText?: string, translation?: string, timestamp?: number) => void;
+  onTranscription?: (
+    text: string, 
+    refinedText?: string, 
+    translation?: string, 
+    timestamp?: number,
+    isKeywordMatch?: boolean,
+    isContinuation?: boolean,
+    continuationReason?: string,
+    matchedKeywords?: string[],
+    matchReason?: string
+  ) => void;
   language?: string;
   model?: string;
   targetLanguage?: string;
@@ -15,7 +25,7 @@ class AudioTranscriptionService {
     onOpen: undefined as ((event: Event) => void) | undefined,
     onClose: undefined as ((event: CloseEvent) => void) | undefined,
     onError: undefined as ((error: Error) => void) | undefined,
-    onTranscription: undefined as ((text: string, refinedText?: string, translation?: string, timestamp?: number) => void) | undefined
+    onTranscription: undefined as ((text: string, refinedText?: string, translation?: string, timestamp?: number, isKeywordMatch?: boolean, isContinuation?: boolean, continuationReason?: string, matchedKeywords?: string[], matchReason?: string) => void) | undefined
   };
   private config = {
     language: 'zh',
@@ -210,12 +220,24 @@ class AudioTranscriptionService {
         console.log('优化文本:', data.refined_text || '(无)');
         console.log('翻译:', data.translation || '(无)');
         console.log('时间戳:', data.timestamp || '(无)');
+        console.log('匹配关键词:', data.is_keyword_match ? '是' : '否');
+        if (data.is_keyword_match) {
+          console.log('匹配的关键词:', data.matched_keywords || []);
+          console.log('匹配原因:', data.match_reason || '(无)');
+        }
+        console.log('是连续文本:', data.is_continuation ? '是' : '否');
+        console.log('连续原因:', data.continuation_reason || '(无)');
         
         this.callbacks.onTranscription(
           data.text,
           data.refined_text,
           data.translation,
-          data.timestamp
+          data.timestamp,
+          data.is_keyword_match,
+          data.is_continuation,
+          data.continuation_reason,
+          data.matched_keywords,
+          data.match_reason
         );
       } else if (data.event === 'error') {
         console.error('服务器报告错误:', data.message);
@@ -389,6 +411,60 @@ class AudioTranscriptionService {
     this.sendConfig().catch(error => {
       console.error('发送配置更新失败:', error);
     });
+  }
+
+  /**
+   * 更新关键词列表
+   * @param keywords 关注的关键词或短语列表
+   * @returns 
+   */
+  async updateKeywords(keywords: string[]): Promise<boolean> {
+    console.log(`更新关键词: ${keywords.join(', ')}`);
+    
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.error('WebSocket未连接，无法发送关键词');
+      return false;
+    }
+    
+    try {
+      const message = {
+        event: 'keywords',
+        keywords: keywords
+      };
+      
+      console.log('发送关键词配置:', message);
+      this.ws.send(JSON.stringify(message));
+      
+      // 等待配置确认
+      const result = await new Promise<boolean>((resolve) => {
+        const timeoutId = setTimeout(() => {
+          this.ws?.removeEventListener('message', messageHandler);
+          console.error('关键词配置发送超时');
+          resolve(false);
+        }, 5000);
+        
+        const messageHandler = (event: MessageEvent) => {
+          try {
+            const response = JSON.parse(event.data);
+            if (response.event === 'keywords_updated') {
+              clearTimeout(timeoutId);
+              this.ws?.removeEventListener('message', messageHandler);
+              console.log('关键词更新成功');
+              resolve(response.status === 'success');
+            }
+          } catch (error) {
+            console.error('处理关键词响应时出错:', error);
+          }
+        };
+        
+        this.ws?.addEventListener('message', messageHandler);
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('发送关键词配置时出错:', error);
+      return false;
+    }
   }
 
   getClientId(): string {

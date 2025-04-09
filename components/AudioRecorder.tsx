@@ -5,7 +5,17 @@ import CheckConfig from './CheckConfig';
 const NOISE_SUPPRESSOR_WORKLET_NAME = 'NoiseSuppressorWorklet';
 
 interface AudioRecorderProps {
-  onTranscriptionResult: (text: string, refinedText?: string, translation?: string, timestamp?: number, contextEnhanced?: boolean) => void;
+  onTranscriptionResult: (
+    text: string, 
+    refinedText?: string, 
+    translation?: string, 
+    timestamp?: number, 
+    isKeywordMatch?: boolean,
+    isContinuation?: boolean,
+    continuationReason?: string,
+    matchedKeywords?: string[],
+    matchReason?: string
+  ) => void;
   onRecordingStateChange?: (isRecording: boolean) => void;
   language: string;
   modelType: string;
@@ -70,13 +80,22 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
     refinedText?: string,
     translation?: string,
     timestamp?: number,
-    contextEnhanced?: boolean
+    isKeywordMatch: boolean = false,
+    isContinuation: boolean = false,
+    continuationReason: string = "",
+    matchedKeywords: string[] = [],
+    matchReason: string = ""
   ) => {
     if (isMountedRef.current) {
       console.log(`%c====== 转写结果 ======`, 'background: #ff9800; color: white; padding: 4px 8px; border-radius: 4px;');
       console.log(`收到转写文本: "${text}"`);
       console.log(`优化文本: "${refinedText || '无'}"`);
       console.log(`翻译: "${translation || '无'}"`);
+      console.log(`匹配关键词: ${isKeywordMatch ? '是' : '否'} ⭐`);
+      console.log(`是连续文本: ${isContinuation ? '是' : '否'}`);
+      if (isContinuation) {
+        console.log(`连续原因: "${continuationReason || '无'}"`);
+      }
       
       try {
         // 首先确认回调函数存在
@@ -85,8 +104,18 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
           return;
         }
         
-        console.log('调用父组件的onTranscriptionResult回调函数');
-        callbacksRef.current.onTranscriptionResult(text, refinedText, translation, timestamp, contextEnhanced);
+        console.log('调用父组件的onTranscriptionResult回调函数，isKeywordMatch=', isKeywordMatch);
+        callbacksRef.current.onTranscriptionResult(
+          text, 
+          refinedText, 
+          translation, 
+          timestamp, 
+          isKeywordMatch,
+          isContinuation,
+          continuationReason,
+          matchedKeywords,
+          matchReason
+        );
         console.log('%c转写结果已成功传递给父组件', 'color: #4CAF50; font-weight: bold;');
       } catch (error) {
         console.error('调用父组件回调函数出错:', error);
@@ -104,17 +133,51 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         
         // 建立WebSocket连接
         await audioTranscriptionService.connect({
-          onTranscription: (text, refinedText, translation, timestamp) => 
-            handleTranscriptionResult(text, refinedText, translation, timestamp),
+          onTranscription: (
+            text: string,
+            refinedText?: string,
+            translation?: string,
+            timestamp?: number,
+            isKeywordMatch?: boolean,
+            isContinuation?: boolean,
+            continuationReason?: string,
+            matchedKeywords?: string[],
+            matchReason?: string
+          ) => {
+            handleTranscriptionResult(
+              text,
+              refinedText,
+              translation,
+              timestamp,
+              isKeywordMatch,
+              isContinuation,
+              continuationReason,
+              matchedKeywords,
+              matchReason
+            );
+          },
           onOpen: () => {
+            console.log('WebSocket连接已打开');
             setIsConnected(true);
             setConnectionStatus('connected');
+            
+            // 连接后启用AudioProcessor
+            if (processorRef.current) {
+              console.log('AudioProcessor已启用');
+            }
           },
-          onClose: () => {
+          onClose: (event) => {
+            console.log('WebSocket连接已关闭', event);
             setIsConnected(false);
             setConnectionStatus('disconnected');
+            
+            // 如果还在录音，则停止
+            if (isRecording) {
+              stopRecording();
+            }
           },
-          onError: () => {
+          onError: (error: Error) => {
+            console.error('WebSocket错误', error);
             setIsConnected(false);
             setConnectionStatus('disconnected');
           },
